@@ -18,14 +18,17 @@ jobs:
           password: ${{ secrets.CR_PAT }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
+      - name: Set lowercase image name
+        shell: bash
+        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
       - name: Update GitOps repository
         shell: bash
         env:
@@ -34,25 +37,27 @@ jobs:
           # Configure git credential store
           git config --global credential.helper store
           echo "https://${GIT_TOKEN}:x-oauth-basic@github.com" > ~/.git-credentials
-          
+
           # Remove any existing gitops directory
           rm -rf gitops
-          
+
           # Clone repository using HTTPS URL without token
           git clone https://github.com/Sankhapramudithagunathuga/grade-api-gitops.git gitops
           cd gitops
-          
+
+          # IMAGE_NAME is lowercase (set in an earlier step). The "I" flag makes sed
+          # case-insensitive, so an old uppercase image line in deployment.yaml gets fixed too.
           if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s|image: ghcr.io/${{ github.repository }}:.*|image: ghcr.io/${{ github.repository }}:${{ github.sha }}|g" deployment.yaml
+            sed -i '' "s|image: ${IMAGE_NAME}:.*|image: ${IMAGE_NAME}:${{ github.sha }}|g" deployment.yaml
           else
-            sed -i "s|image: ghcr.io/${{ github.repository }}:.*|image: ghcr.io/${{ github.repository }}:${{ github.sha }}|g" deployment.yaml
+            sed -i "s|image: ${IMAGE_NAME}:.*|image: ${IMAGE_NAME}:${{ github.sha }}|gI" deployment.yaml
           fi
-          
+
           # Commit changes
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
           git add deployment.yaml
           git commit -m "Update image to ${{ github.sha }}"
-          
+
           # Push
           git push -f https://${GIT_TOKEN}@github.com/Sankhapramudithagunathuga/grade-api-gitops.git main
